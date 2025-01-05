@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:trabalho_pratico_flutter/pages/recent_page.dart';
+import '../file_storage.dart';
 import 'add_contact_page.dart';
 import 'edit_contact_page.dart';
 import 'map_page.dart';
@@ -18,6 +20,7 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   List<Contact> contacts = [];
+  Map<int, bool> expandedState = {}; // Armazena o estado expandido de cada contato
 
   @override
   void initState() {
@@ -25,21 +28,20 @@ class HomePageState extends State<HomePage> {
     _loadContacts();
   }
 
+  // Função para alternar o estado expandido
+  void _toggleExpanded(int index) {
+    setState(() {
+      expandedState[index] = !(expandedState[index] ?? false);
+    });
+  }
+
   Future<void> _loadContacts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? contactsJson = prefs.getString('contacts');
-    if (contactsJson != null) {
-      final List<dynamic> decoded = jsonDecode(contactsJson);
-      setState(() {
-        contacts = decoded.map((item) => Contact.fromJson(item)).toList();
-      });
-    }
+    contacts = await FileStorage.loadContacts();
+    setState(() {});
   }
 
   Future<void> _saveContacts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String encoded = jsonEncode(contacts.map((c) => c.toJson()).toList());
-    await prefs.setString('contacts', encoded);
+    await FileStorage.saveContacts(contacts);
   }
 
   void _addContact(Contact contact) {
@@ -121,73 +123,69 @@ class HomePageState extends State<HomePage> {
         itemCount: contacts.length,
         itemBuilder: (context, index) {
           final contact = contacts[index];
+          final isExpanded = expandedState[index] ?? false;
           return Card(
             margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EditContactPage(
-                      onSave: (updatedContact) => _editContact(index, updatedContact),
-                      contact: contact,
-                      onDelete: () => _deleteContact(index),
+            child: Column(
+              children: [
+                ListTile(
+                  onTap: () => _toggleExpanded(index), // Alterna a expansão ao clicar
+                  leading: contact.imagePath != null
+                      ? CircleAvatar(
+                    backgroundImage: FileImage(File(contact.imagePath!)),
+                  )
+                      : CircleAvatar(
+                    child: Icon(Icons.person),
+                  ),
+                  title: Text(contact.name, style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(contact.email),
+                  trailing: Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more, // Ícone de expansão
+                  ),
+                ),
+                if (isExpanded) ...[
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Telefone: ${contact.phone}", style: TextStyle(fontSize: 14)),
+                        if (contact.location != null)
+                          Text("Localização: ${contact.location}", style: TextStyle(fontSize: 14)),
+                        if (contact.birthDate != null)
+                          Text(
+                            "Data de Nascimento: ${DateFormat.yMd().format(contact.birthDate!)}",
+                            style: TextStyle(fontSize: 14),
+                          ),
+                      ],
                     ),
                   ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: MediaQuery.of(context).size.width * 0.2,
-                      height: MediaQuery.of(context).size.width * 0.2,
-                      margin: EdgeInsets.only(right: 16),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(8),
+                  ButtonBar(
+                    alignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EditContactPage(
+                                onSave: (updatedContact) => _editContact(index, updatedContact),
+                                contact: contact,
+                                onDelete: () => _deleteContact(index),
+                              ),
+                            ),
+                          );
+                        },
+                        child: Text('EDITAR'),
                       ),
-                      child: contact.imagePath != null
-                          ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(contact.imagePath!),
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                          : Center(
-                        child: Icon(Icons.person, size: 50, color: Colors.grey),
+                      TextButton(
+                        onPressed: () => _deleteContact(index),
+                        child: Text('REMOVER'),
                       ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(contact.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 8),
-                          Text(contact.email, style: TextStyle(fontSize: 14, color: Colors.grey)),
-                          SizedBox(height: 8),
-                          Text(contact.phone, style: TextStyle(fontSize: 14, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.map, color: Colors.blue),
-                      onPressed: contact.location != null
-                          ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MapPage(location: contact.location!),
-                          ),
-                        );
-                      }
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           );
         },
